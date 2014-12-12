@@ -80,6 +80,18 @@
  	return rank/Cj * TILE_SIZE;
 }
 
+int
+chinese_remainder_bound(int seed, int q, int C)
+{
+	return min((seed+1)*q - 1, C - 1);
+}
+
+int
+chinese_remainder_value(int seed, int N, int C)
+{
+	return (seed * N) % C;
+}
+
  void
  img (const char *FileNameImg)
  {
@@ -129,9 +141,9 @@
 
  	int tile_index = 0;
 
- 	for (k = rank * q; k <= min((rank+1)*q - 1, C - 1); k++, tile_index++){
+ 	for (k = rank * q; k <= chinese_remainder_bound(j, q, C); k++, tile_index++){
     // on affecte ce carreau au process courant
- 		rank_tile[tile_index] = (k * N) % C;
+ 		rank_tile[tile_index] = chinese_remainder_value(k, N, C);;
     // on parcourt le carreau, en donnant ses indices de début et fin
  		int j_begin = rank_j(rank_tile[tile_index], Cj);
  		int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
