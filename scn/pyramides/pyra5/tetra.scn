@@ -1,0 +1,117 @@
+###############################
+# Caracteristiques de l'image #
+###############################
+# NbrPixX NbrPixY
+I 300     300
+
+################################
+# Caracteristiques de la scene #
+################################
+#  rough  scn_color      background_color
+S  0.5    0.2 0.2 0.2    0 0 1
+
+##############################
+# Caracteristiques du binder #
+##############################
+# pour le binder de base, rien a preciser
+B
+
+# pour le binder voxel, les dimensions de la grille
+#B  1  1  1
+#B  2  2  2
+#B  3  3  3
+#B  5  5  5
+#B 10 10 10
+#B 20 20 20
+#B 30 30 30
+#B 50 50 50
+
+#################################
+# Caracteristiques de la camera #
+#################################
+#  viewer_pos  view_direction  vertical  camera_opening
+C  10 65 10    0 -1 0          0 0 1     25 25
+
+
+
+E LIGHT  0.5 0.5 0.5  1.0
+ POINT  9 13 16
+
+E LIGHT  0.5 0.5 0.5   1.0
+ POINT  11 19.5 8
+
+
+#
+# sol
+#
+E NOLIGHT 0.8 0.8 0.8   1.0
+ NAPPE 4 1
+  0  0  0
+ 20  0  0
+  0 20  0
+ 20 20  0
+(0 1 3 2)
+
+#
+# plafond
+#
+E NOLIGHT  0.8 0.8 0.8  1.0
+ NAPPE 4 1
+  0  0  20
+ 20  0  20
+  0 20  20
+ 20 20  20
+(2 3 1 0)
+
+#
+# mur gauche
+#
+E NOLIGHT  0.8 0.8 0.8  1.0
+ NAPPE 4 1
+  0  0   0
+  0 20   0
+  0  0  20
+  0 20  20
+ (0 1 3 2)
+
+#
+# mur droit
+#
+E NOLIGHT  0.8 0.8 0.8  1.0
+ NAPPE 4 1
+  20  0   0
+  20 20   0
+  20  0  20
+  20 20  20
+ (2 3 1 0)
+
+#
+# mur devant
+#
+E NOLIGHT 0.8 0.8 0.8  1.0
+ NAPPE 4 1
+  0  0   0
+ 20  0   0
+  0  0  20
+ 20  0  20
+ (2 3 1 0)
+
+#
+# mur du fond
+#
+E NOLIGHT  0.8 0.8 0.8  1.0
+ NAPPE 4 1
+  0  20   0
+ 20  20   0
+  0  20  20
+ 20  20  20
+ (0 1 3 2)
+
+#############################################################################
+#############################################################################
+
+$tetrah1.rriff
+$tetrah2.rriff
+$tetrah3.rriff
+$tetrah4.rriff
+$tetrah5.rriff

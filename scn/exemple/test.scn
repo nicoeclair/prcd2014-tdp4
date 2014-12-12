@@ -1,0 +1,116 @@
+#
+# Exemple de scene
+#
+
+###############################
+# Caracteristiques de l'image #
+###############################
+# NbrPixX NbrPixY
+I 500     500
+#I 300     300
+
+################################
+# Caracteristiques de la scene #
+################################
+#  rough  scn_color      background_color
+S  0.5    0.2 0.2 0.2    0 0 1
+
+##############################
+# Caracteristiques du binder #
+##############################
+# pour le binder de base, rien a preciser
+#B
+
+# pour le binder voxel, les dimensions de la grille
+B 5 5 5
+
+#################################
+# Caracteristiques de la camera #
+#################################
+#  viewer_pos  view_direction  vertical  camera_opening
+C  -6 -6 8     1 1 -0.3           0 0 1     55 55
+
+
+####################
+# murs de la piece #
+####################
+
+E NOLIGHT  0 0.45 0     0.9
+  NAPPE 4 1
+     0  0  0
+    10  0  0
+    10 10  0
+     0 10  0
+    (0 1 2 3)
+
+E NOLIGHT  0 0.45 0     0.9
+  NAPPE 4 1
+     0  0  10
+     0 10  10
+    10 10  10
+    10  0  10
+    (0 1 2 3)
+
+E NOLIGHT  0 0.45 0     0.9
+  NAPPE 4 1
+     0  0   0
+     0  0  10
+    10  0  10
+    10  0   0
+    (0 1 2 3)
+
+E NOLIGHT  0 0.45 0     0.9
+  NAPPE 4 1
+     0  10   0
+    10  10   0
+    10  10  10
+     0  10  10
+    (0 1 2 3)
+
+E NOLIGHT  0 0.45 0     0.9
+  NAPPE 4 1
+     0   0   0
+     0  10   0
+     0  10  10
+     0   0  10
+    (0 1 2 3)
+
+E NOLIGHT  0 0.45 0     0.9
+  NAPPE 4 1
+     10  10   0
+     10   0   0
+     10   0  10
+     10  10  10
+    (0 1 2 3)
+
+
+##########
+# Sphere #
+##########
+E NOLIGHT  0.9 0 0     0.9
+  SPHERE  7 3 2  2
+
+
+##########
+#Miroirs #
+##########
+E NOLIGHT  0.9 0.9 0.9     0.1
+  NAPPE 4 1
+     2   9.5   2
+     7   9.5   2
+     7   9.5   7
+     2   9.5   7
+    (0 1 2 3)
+
+E NOLIGHT  0.9 0.9 0.9     0.1
+  SPHERE  7 7 7  2
+
+
+############
+# Lumieres #
+############
+E LIGHT   0.9 0.9 0.9  0.9
+  POINT   1 9 4
+
+E LIGHT   0.5 0.5 0.5  0.9
+  POINT   9 1 9

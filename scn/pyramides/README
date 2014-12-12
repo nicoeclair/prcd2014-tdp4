@@ -1,0 +1,24 @@
+PYRA1 : scene avec niveau de recursion 1 pour chaque pyramide
+        20 facettes
+
+PYRA2 : scene avec niveau de recursion 2 pour chaque pyramide
+        80 facettes
+
+PYRA3 : scene avec niveau de recursion 3 pour chaque pyramide
+        320 facettes
+
+PYRA4 : scene avec niveau de recursion 4 pour chaque pyramide
+        1280 facettes
+
+PYRA5 : scene avec niveau de recursion 5 pour chaque pyramide
+        5120 facettes
+
+PYRA6 : scene avec niveau de recursion 6 pour chaque pyramide
+        20480 facettes
+
+PYRA7 : scene avec niveau de recursion 7 pour chaque pyramide
+        819220 facettes
+
+PYRA8 : scene avec niveau de recursion 8 pour chaque pyramide
+        327680 facettes
+

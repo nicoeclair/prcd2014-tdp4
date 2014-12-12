@@ -1,0 +1,13 @@
+Temps de Pyra2 : 86 facettes + 2 sources lumineuses
+
+
+BND BASIC :		    s
+
+BND VOXEL  1  1  1	    s
+BND VOXEL  2  2  2	    s
+BND VOXEL  3  3  3	    s
+BND VOXEL  5  5  5	    s
+BND VOXEL 10 10 10	    s
+BND VOXEL 20 20 20	    s
+BND VOXEL 30 30 30	    s
+BND VOXEL 50 50 50	    s
