@@ -68,11 +68,13 @@
  	return (Ray.Color);
  }
 
+// colonne du début du carreau rank
  int rank_i(int rank, int Ci)
  {
  	return (rank % Ci) * TILE_SIZE;
  }
 
+// ligne du début du carreau rank
  int rank_j(int rank, int Cj)
 {
  	return rank/Cj * TILE_SIZE;
@@ -95,7 +97,7 @@
 
  	MPI_Datatype MPI_COLOR, blocktype, blocktype2;
 
- 	MPI_Type_vector(1, 1, 0, MPI_FLOAT, &MPI_COLOR);
+ 	MPI_Type_vector(1, 3, 0, MPI_FLOAT, &MPI_COLOR);
  	MPI_Type_commit(&MPI_COLOR);
 
  	strcpy (Name, FileNameImg);
@@ -103,16 +105,19 @@
  	INIT_FILE (FileImg, Name, "w");
  	fprintf (FileImg, "P6\n%d %d\n255\n", Img.Pixel.i, Img.Pixel.j);
 
+ 	// number of tiles
  	int C = (Img.Pixel.i * Img.Pixel.j)  / (TILE_SIZE * TILE_SIZE);
- 	int Ci = C * TILE_SIZE / Img.Pixel.j;
- 	int Cj = C * TILE_SIZE / Img.Pixel.i;
+ 	int Ci = C * TILE_SIZE / Img.Pixel.j; // number of tiles in dimension i
+ 	int Cj = C * TILE_SIZE / Img.Pixel.i; // number of tiles in dimension j
  	N = 1;
  	int q = (C+P-1)/P;
  	int size = TILE_SIZE * TILE_SIZE * C ;
  	printf("%d\n",size );
  	if (rank == 0) {
+ 		// final image buffer
  		INIT_MEM (TabColor, size, COLOR);
  	}
+ 	// buffer for each tile
  	INIT_MEM (TileColor, TILE_SIZE * TILE_SIZE, COLOR);
 
  	int* rank_tile;
@@ -137,7 +142,7 @@
  				TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
  			}
  		}
- 		MPI_Send(TileColor, TILE_SIZE * TILE_SIZE * 3, MPI_FLOAT, 0, rank_tile[tile_index], MPI_COMM_WORLD); 
+ 		MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, rank_tile[tile_index], MPI_COMM_WORLD); 
  	}
 
  	MPI_Type_vector(TILE_SIZE, TILE_SIZE, size, MPI_COLOR , &blocktype2);
@@ -149,7 +154,7 @@
   			memcpy(&TabColor[j * Img.Pixel.i ],&TileColor[j * TILE_SIZE],TILE_SIZE * sizeof(COLOR));
   		}
   	for (i = 0; i < C ; i++){
-  		MPI_Recv(TileColor, TILE_SIZE * TILE_SIZE * 3, MPI_FLOAT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+  		MPI_Recv(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 		// for (j = 0, TmpColor = Color; j < TILE_SIZE * TILE_SIZE; j++, TmpColor++) {
   // 			printf("%f %f %f\n",TmpColor->r,TmpColor->g,TmpColor->b);
 		// }
@@ -165,6 +170,7 @@
   }
   
   if (rank == 0){
+  	// writing in file
   	for (j = 0, Color = TabColor; j < size; j++, Color++) {
   		Byte = Color->r < 1.0 ? 255.0*Color->r : 255.0;
   		putc (Byte, FileImg);
@@ -179,7 +185,7 @@
   	printf("Freed tabcolor\n");
   }
   // EXIT_MEM (TileColor);
-  // EXIT_MEM (rank_tile);
+  EXIT_MEM (rank_tile);
   EXIT_FILE (FileImg);
   MPI_Finalize();
   
