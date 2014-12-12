@@ -18,7 +18,7 @@
 
 # repertoire d'installation
 BIN_DIR = ../bin
-IMG_VERSION = img.mpi-static.c
+IMG_VERSION = img.mpi-thread.c
 
 # mode sans test unitaire
 #DEBUG = -DNDEBUG

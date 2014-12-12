@@ -133,29 +133,20 @@
  	// buffer for each tile
  	INIT_MEM (TileColor, TILE_SIZE * TILE_SIZE, COLOR);
 
- 	int* rank_tile;
- 	if (rank == 0) {
- 		INIT_MEM (rank_tile, size, int);
- 	} else {
- 		INIT_MEM(rank_tile,q,int);  
- 	}
-
- 	int tile_index = 0;
-
- 	for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++, tile_index++){
+ 	for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
     	// pushing tile in queue of current process
- 		rank_tile[tile_index] = chinese_remainder_value(k, N, C);;
+ 		int current_tile = chinese_remainder_value(k, N, C);;
     	// assigning first and final index of tile
- 		int j_begin = rank_j(rank_tile[tile_index], Cj);
+ 		int j_begin = rank_j(current_tile, Cj);
  		int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
- 		int i_begin = rank_i(rank_tile[tile_index], Ci);
+ 		int i_begin = rank_i(current_tile, Ci);
  		int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
  		for (j = j_begin; j < j_end ; j++) {
  			for (i = i_begin ; i < i_end; i++) {
  				TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
  			}
  		}
- 		MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, rank_tile[tile_index], MPI_COMM_WORLD); 
+ 		MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile, MPI_COMM_WORLD); 
  	}
 
  	MPI_Type_vector(TILE_SIZE, TILE_SIZE, size, MPI_COLOR , &blocktype2);
@@ -190,7 +181,6 @@
   	printf("Freed tabcolor\n");
   }
   EXIT_MEM (TileColor);
-  EXIT_MEM (rank_tile);
   MPI_Finalize();
   
 }
