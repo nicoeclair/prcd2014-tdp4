@@ -37,7 +37,7 @@ FILE = ../scn/exemple/test
 CPPFLAGS = -I../include -I. $(DEBUG) $(ZCAT)
 #CFLAGS = -O -Wall
 CFLAGS = -g -Wall
-LDLIBS = -lm
+LDLIBS = -lm -lpthread
 
 # application : fichier executable
 BIN = lanceur

@@ -27,16 +27,21 @@
 #include "bnd.h"
 #include "cmr.h"
 #include "mpi.h"
+#include <pthread.h>
 
 
 #define TILE_SIZE 8
+#define NB_THREADS 4
+pthread_mutex_t mutex;
+MPI_Datatype MPI_COLOR;
+int Ci;
+int Cj;
 
 enum {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
 
  int min(int a, int b){
   return (a<b)?a:b;
 }
-
 
 typedef struct {
   COUPLE  Pixel;
@@ -175,6 +180,35 @@ chinese_remainder_value(int k, int N, int C)
   return (k * N) % C;
 }
 
+
+int tile_fill(struct TileQueue *tiles)
+{
+  INDEX i,j;
+  COLOR *TileColor;
+  INIT_MEM(TileColor, TILE_SIZE * TILE_SIZE, COLOR);
+  
+  pthread_mutex_lock(&mutex);
+  while(!isEmpty(tiles)){
+    int current_tile = firstElement(tiles);
+    pop(tiles);
+    pthread_mutex_unlock(&mutex);
+      // assigning first and final index of tile
+    int j_begin = rank_j(current_tile, Cj);
+    int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
+    int i_begin = rank_i(current_tile, Ci);
+    int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
+    for (j = j_begin; j < j_end ; j++) {
+      for (i = i_begin ; i < i_end; i++) {
+        TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
+      }
+    }
+    MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD); 
+    pthread_mutex_lock(&mutex);
+  }
+  pthread_mutex_unlock(&mutex);
+  return 0;
+}
+
 void
 img (const char *FileNameImg)
 {
@@ -183,14 +217,12 @@ img (const char *FileNameImg)
   STRING Name;
   INDEX  i, j, k,  rank, P;
   BYTE   Byte;
-  int N = 1898881;
-  MPI_Status status;
+  int N = 18988, err, provided;
 
-  MPI_Init(NULL, NULL);
+  MPI_Status status;
+  MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &P);
-
-  MPI_Datatype MPI_COLOR, blocktype, blocktype2;
 
   MPI_Type_vector(1, 3, 0, MPI_FLOAT, &MPI_COLOR);
   MPI_Type_commit(&MPI_COLOR);
@@ -203,55 +235,38 @@ img (const char *FileNameImg)
   }
 
   // number of tiles
-  int Ci = Img.Pixel.i / TILE_SIZE + (Img.Pixel.i % TILE_SIZE?1:0); // number of tiles in dimension i
-  int Cj = Img.Pixel.j / TILE_SIZE + (Img.Pixel.i % TILE_SIZE?1:0);  // number of tiles in dimension j
+  Ci = Img.Pixel.i / TILE_SIZE + (Img.Pixel.i % TILE_SIZE?1:0); // number of tiles in dimension i
+  Cj = Img.Pixel.j / TILE_SIZE + (Img.Pixel.i % TILE_SIZE?1:0);  // number of tiles in dimension j
   int C = Ci * Cj;
-  N = 1;
   int q = (C+P-1)/P;
   int size = Img.Pixel.i * Img.Pixel.j ;
+  N = C/2+1;
   if (rank == 0) {
     // final image buffer
     INIT_MEM (TabColor, size, COLOR);
   }
   // buffer for each tile
   INIT_MEM (TileColor, TILE_SIZE * TILE_SIZE, COLOR);
-
   struct TileQueue tiles = {NULL, NULL};
-  
-  printQueue(&tiles);
-  addTile(&tiles, 1);
-  printQueue(&tiles);
-  printf("first elt = %d\n", firstElement(&tiles));
-  addTile(&tiles, 7);
-  printQueue(&tiles);
-  pop(&tiles);
-  pop(&tiles);
-  printQueue(&tiles);
 
   for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
     // pushing tile in queue of current process
     addTile(&tiles,chinese_remainder_value(k, N, C));
   }
-  while(!isEmpty(&tiles)){
-    int current_tile = firstElement(&tiles);
-    pop(&tiles);
-      // assigning first and final index of tile
-    int j_begin = rank_j(current_tile, Cj);
-    int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
-    int i_begin = rank_i(current_tile, Ci);
-    int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
-    for (j = j_begin; j < j_end ; j++) {
-      for (i = i_begin ; i < i_end; i++) {
-        TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
-      }
-    }
-    MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD); 
+
+  pthread_mutex_init(&mutex,NULL);
+  pthread_t tid[NB_THREADS];
+  for (i = 0; i < NB_THREADS; i++){
+    err = pthread_create(&(tid[i]), NULL, (void*)tile_fill, (void*)&tiles);
+    if (err != 0)
+      printf("\ncan't create thread :[%s]", strerror(err));
+  }
+  for (i = 0; i < NB_THREADS; i++){
+    pthread_join(tid[i],NULL);
   }
 
-  MPI_Type_vector(TILE_SIZE, TILE_SIZE, size, MPI_COLOR , &blocktype2);
-  MPI_Type_create_resized(blocktype2, 0, sizeof(double), &blocktype);
-  MPI_Type_commit(&blocktype);
-
+  // tile_fill(&tiles);
+  pthread_mutex_destroy(&mutex);
   if (rank == 0){ // process 0 gets to know which tiles each process takes care of
     for (j = 0; j < TILE_SIZE; j++) {
       memcpy(&TabColor[j * Img.Pixel.i ],&TileColor[j * TILE_SIZE],TILE_SIZE * sizeof(COLOR));
