@@ -103,9 +103,6 @@
  	int N = 1898881;
  	MPI_Status status;
 
-
- 	// return;
-
  	MPI_Init(NULL, NULL);
  	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
  	MPI_Comm_size(MPI_COMM_WORLD, &P);
@@ -123,9 +120,10 @@
  	}
 
  	// number of tiles
- 	int C = (Img.Pixel.i * Img.Pixel.j)  / (TILE_SIZE * TILE_SIZE);
- 	int Ci = C * TILE_SIZE / Img.Pixel.j; // number of tiles in dimension i
- 	int Cj = C * TILE_SIZE / Img.Pixel.i; // number of tiles in dimension j
+ 	int Ci = Img.Pixel.i / TILE_SIZE + (Img.Pixel.i % TILE_SIZE?1:0); // number of tiles in dimension i
+ 	int Cj = Img.Pixel.j / TILE_SIZE + (Img.Pixel.i % TILE_SIZE?1:0);  // number of tiles in dimension j
+ 	int C = Ci * Cj;
+ 	printf("%d %d\n",Ci,Cj );
  	N = 1;
  	int q = (C+P-1)/P;
  	int size = Img.Pixel.i * Img.Pixel.j ;
@@ -183,7 +181,6 @@
   			memcpy(&TabColor[index_begin + j * Img.Pixel.i],&TileColor[j * TILE_SIZE],min(Img.Pixel.i - rank_i(status.MPI_TAG,Ci),TILE_SIZE) * sizeof(COLOR));
   		}
   	}
-  	printf("hello\n");
   	// writing in file
   	for (j = 0, Color = TabColor; j < size; j++, Color++) {
   		// printf("%g %g %g\n",Color->r,Color->g,Color->b );
