@@ -25,7 +25,7 @@
 #include "scn.h"
 #include "bnd.h"
 #include "cmr.h"
-
+#include "mpi.h"
 
 typedef struct {
   COUPLE  Pixel;
@@ -71,7 +71,28 @@ img (const char *FileNameImg)
   STRING Name;
   INDEX	 i, j;
   BYTE   Byte;
-
+  int next_proc, prev_proc, nb_proc, myrank;
+  MPI_Request rr, rs;
+  MPI_Status st;
+  char buffer[1024];
+  
+  MPI_Init(NULL, NULL);
+  
+  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nb_proc);
+  next_proc = (myrank + 1) % nb_proc;
+  prev_proc = (myrank - 1 + nb_proc) % nb_proc;
+  
+  sprintf(buffer, "from %d to %d", myrank, next_proc);
+  
+  MPI_Isend(buffer, 1024, MPI_CHAR, next_proc, 32, MPI_COMM_WORLD, &rs);
+  MPI_Irecv(buffer, 1024, MPI_CHAR, prev_proc, 32, MPI_COMM_WORLD, &rr);
+  MPI_Wait(&rr, &st);
+  
+  printf("I am %d => %s\n", myrank, buffer);
+  
+  MPI_Finalize();
+  
   strcpy (Name, FileNameImg);
   strcat (Name, ".ppm");
   INIT_FILE (FileImg, Name, "w");
