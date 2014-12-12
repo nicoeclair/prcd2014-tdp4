@@ -76,21 +76,21 @@
 
 // ligne du début du carreau rank
  int rank_j(int rank, int Cj)
-{
+ {
  	return rank/Cj * TILE_SIZE;
-}
+ }
 
-int
-chinese_remainder_bound(int seed, int q, int C)
-{
-	return min((seed+1)*q - 1, C - 1);
-}
+ int
+ chinese_remainder_bound(int rank, int q, int C)
+ {
+ 	return min((rank+1)*q - 1, C - 1);
+ }
 
-int
-chinese_remainder_value(int seed, int N, int C)
-{
-	return (seed * N) % C;
-}
+ int
+ chinese_remainder_value(int k, int N, int C)
+ {
+ 	return (k * N) % C;
+ }
 
  void
  img (const char *FileNameImg)
@@ -103,6 +103,9 @@ chinese_remainder_value(int seed, int N, int C)
  	int N = 1898881;
  	MPI_Status status;
 
+
+ 	// return;
+
  	MPI_Init(NULL, NULL);
  	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
  	MPI_Comm_size(MPI_COMM_WORLD, &P);
@@ -112,10 +115,12 @@ chinese_remainder_value(int seed, int N, int C)
  	MPI_Type_vector(1, 3, 0, MPI_FLOAT, &MPI_COLOR);
  	MPI_Type_commit(&MPI_COLOR);
 
- 	strcpy (Name, FileNameImg);
- 	strcat (Name, ".ppm");
- 	INIT_FILE (FileImg, Name, "w");
- 	fprintf (FileImg, "P6\n%d %d\n255\n", Img.Pixel.i, Img.Pixel.j);
+ 	if (rank == 0) {
+ 		strcpy (Name, FileNameImg);
+ 		strcat (Name, ".ppm");
+ 		INIT_FILE (FileImg, Name, "w");
+ 		fprintf (FileImg, "P6\n%d %d\n255\n", Img.Pixel.i, Img.Pixel.j);
+ 	}
 
  	// number of tiles
  	int C = (Img.Pixel.i * Img.Pixel.j)  / (TILE_SIZE * TILE_SIZE);
@@ -123,7 +128,7 @@ chinese_remainder_value(int seed, int N, int C)
  	int Cj = C * TILE_SIZE / Img.Pixel.i; // number of tiles in dimension j
  	N = 1;
  	int q = (C+P-1)/P;
- 	int size = TILE_SIZE * TILE_SIZE * C ;
+ 	int size = Img.Pixel.i * Img.Pixel.j ;
  	printf("%d\n",size );
  	if (rank == 0) {
  		// final image buffer
@@ -141,8 +146,9 @@ chinese_remainder_value(int seed, int N, int C)
 
  	int tile_index = 0;
 
- 	for (k = rank * q; k <= chinese_remainder_bound(j, q, C); k++, tile_index++){
+ 	for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++, tile_index++){
     // on affecte ce carreau au process courant
+ 		// printf("%d %d\n",tile_index,q );
  		rank_tile[tile_index] = chinese_remainder_value(k, N, C);;
     // on parcourt le carreau, en donnant ses indices de début et fin
  		int j_begin = rank_j(rank_tile[tile_index], Cj);
@@ -163,27 +169,24 @@ chinese_remainder_value(int seed, int N, int C)
 
   if (rank == 0){ // process 0 gets to know which tiles each process takes care of
   	for (j = 0; j < TILE_SIZE; j++) {
-  			memcpy(&TabColor[j * Img.Pixel.i ],&TileColor[j * TILE_SIZE],TILE_SIZE * sizeof(COLOR));
-  		}
+  		memcpy(&TabColor[j * Img.Pixel.i ],&TileColor[j * TILE_SIZE],TILE_SIZE * sizeof(COLOR));
+  	}
   	for (i = 0; i < C ; i++){
   		MPI_Recv(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 		// for (j = 0, TmpColor = Color; j < TILE_SIZE * TILE_SIZE; j++, TmpColor++) {
   // 			printf("%f %f %f\n",TmpColor->r,TmpColor->g,TmpColor->b);
 		// }
-  		for (j = 0; j < TILE_SIZE; j++) {
-  			// printf("%d %d\n",rank_i(status.MPI_TAG,Ci), rank_j(status.MPI_TAG,Cj) );
-  			memcpy(&TabColor[rank_i(status.MPI_TAG,Ci) + (rank_j(status.MPI_TAG,Cj) + j) * Img.Pixel.i ],&TileColor[j * TILE_SIZE],TILE_SIZE * sizeof(COLOR));
+  		int j_begin = rank_j(status.MPI_TAG,Cj);
+  		int index_begin = rank_i(status.MPI_TAG,Ci) + j_begin * Img.Pixel.i;
+  		for (j = 0; j < TILE_SIZE && j_begin + j < Img.Pixel.j; j++) {
+  			// printf("%d %d\n",rank_i(status.MPI_TAG,Ci), rank_j(status.MPI_TAG,Cj) + j );
+  			memcpy(&TabColor[index_begin + j * Img.Pixel.i],&TileColor[j * TILE_SIZE],min(Img.Pixel.i - rank_i(status.MPI_TAG,Ci),TILE_SIZE) * sizeof(COLOR));
   		}
   	}
-  } else { // others
-    //for (k = 0; k < q; k++)
-    //printf("sent rank_tile %d\n",rank_tile[k]);
-    //MPI_Send(rank_tile, q, MPI_INT, 0, rank, MPI_COMM_WORLD); 
-  }
-  
-  if (rank == 0){
+  	printf("hello\n");
   	// writing in file
   	for (j = 0, Color = TabColor; j < size; j++, Color++) {
+  		// printf("%g %g %g\n",Color->r,Color->g,Color->b );
   		Byte = Color->r < 1.0 ? 255.0*Color->r : 255.0;
   		putc (Byte, FileImg);
   		Byte = Color->g < 1.0 ? 255.0*Color->g : 255.0;
@@ -192,13 +195,13 @@ chinese_remainder_value(int seed, int N, int C)
   		putc (Byte, FileImg);
   		// fflush (FileImg);
   	}
+  	EXIT_FILE (FileImg);
   	printf("Copied in file\n");
-  	// EXIT_MEM (TabColor);
+  	EXIT_MEM (TabColor);
   	printf("Freed tabcolor\n");
   }
-  // EXIT_MEM (TileColor);
+  EXIT_MEM (TileColor);
   EXIT_MEM (rank_tile);
-  EXIT_FILE (FileImg);
   MPI_Finalize();
   
 }
