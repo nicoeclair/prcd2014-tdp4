@@ -68,13 +68,13 @@
  	return (Ray.Color);
  }
 
-// colonne du début du carreau rank
+// first column of rank-th tile
  int rank_i(int rank, int Ci)
  {
  	return (rank % Ci) * TILE_SIZE;
  }
 
-// ligne du début du carreau rank
+// first line of rank-th tile 
  int rank_j(int rank, int Cj)
  {
  	return rank/Cj * TILE_SIZE;
@@ -123,11 +123,9 @@
  	int Ci = Img.Pixel.i / TILE_SIZE + (Img.Pixel.i % TILE_SIZE?1:0); // number of tiles in dimension i
  	int Cj = Img.Pixel.j / TILE_SIZE + (Img.Pixel.i % TILE_SIZE?1:0);  // number of tiles in dimension j
  	int C = Ci * Cj;
- 	printf("%d %d\n",Ci,Cj );
  	N = 1;
  	int q = (C+P-1)/P;
  	int size = Img.Pixel.i * Img.Pixel.j ;
- 	printf("%d\n",size );
  	if (rank == 0) {
  		// final image buffer
  		INIT_MEM (TabColor, size, COLOR);
@@ -145,10 +143,9 @@
  	int tile_index = 0;
 
  	for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++, tile_index++){
-    // on affecte ce carreau au process courant
- 		// printf("%d %d\n",tile_index,q );
+    	// pushing tile in queue of current process
  		rank_tile[tile_index] = chinese_remainder_value(k, N, C);;
-    // on parcourt le carreau, en donnant ses indices de début et fin
+    	// assigning first and final index of tile
  		int j_begin = rank_j(rank_tile[tile_index], Cj);
  		int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
  		int i_begin = rank_i(rank_tile[tile_index], Ci);
@@ -169,28 +166,23 @@
   	for (j = 0; j < TILE_SIZE; j++) {
   		memcpy(&TabColor[j * Img.Pixel.i ],&TileColor[j * TILE_SIZE],TILE_SIZE * sizeof(COLOR));
   	}
+  	// Receive tiles from other procs
   	for (i = 0; i < C ; i++){
   		MPI_Recv(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-		// for (j = 0, TmpColor = Color; j < TILE_SIZE * TILE_SIZE; j++, TmpColor++) {
-  // 			printf("%f %f %f\n",TmpColor->r,TmpColor->g,TmpColor->b);
-		// }
   		int j_begin = rank_j(status.MPI_TAG,Cj);
   		int index_begin = rank_i(status.MPI_TAG,Ci) + j_begin * Img.Pixel.i;
   		for (j = 0; j < TILE_SIZE && j_begin + j < Img.Pixel.j; j++) {
-  			// printf("%d %d\n",rank_i(status.MPI_TAG,Ci), rank_j(status.MPI_TAG,Cj) + j );
   			memcpy(&TabColor[index_begin + j * Img.Pixel.i],&TileColor[j * TILE_SIZE],min(Img.Pixel.i - rank_i(status.MPI_TAG,Ci),TILE_SIZE) * sizeof(COLOR));
   		}
   	}
   	// writing in file
   	for (j = 0, Color = TabColor; j < size; j++, Color++) {
-  		// printf("%g %g %g\n",Color->r,Color->g,Color->b );
   		Byte = Color->r < 1.0 ? 255.0*Color->r : 255.0;
   		putc (Byte, FileImg);
   		Byte = Color->g < 1.0 ? 255.0*Color->g : 255.0;
   		putc (Byte, FileImg);
   		Byte = Color->b < 1.0 ? 255.0*Color->b : 255.0;
   		putc (Byte, FileImg);
-  		// fflush (FileImg);
   	}
   	EXIT_FILE (FileImg);
   	printf("Copied in file\n");
