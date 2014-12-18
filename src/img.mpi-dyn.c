@@ -29,6 +29,7 @@
 #include "mpi.h"
 #include <pthread.h>
 #include <semaphore.h>
+#include <unistd.h>
 
 #define TILE_SIZE 8
 #define NB_THREADS 4
@@ -197,18 +198,22 @@ int tile_fill(struct TileQueue *tiles)
       int current_tile = firstElement(tiles);
       pop(tiles);
       pthread_mutex_unlock(&mutex);
+      if (current_tile < 0)
+        usleep(-current_tile);
+      else {
 
       // assigning first and final index of tile
-      int j_begin = rank_j(current_tile, Cj);
-      int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
-      int i_begin = rank_i(current_tile, Ci);
-      int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
-      for (j = j_begin; j < j_end ; j++) {
-        for (i = i_begin ; i < i_end; i++) {
-          TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
+        int j_begin = rank_j(current_tile, Cj);
+        int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
+        int i_begin = rank_i(current_tile, Ci);
+        int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
+        for (j = j_begin; j < j_end ; j++) {
+          for (i = i_begin ; i < i_end; i++) {
+            TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
+          }
         }
+        MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD);
       }
-      MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD);
     } else {
       pthread_mutex_unlock(&mutex);
       sem_post(&ask_work);
@@ -219,13 +224,45 @@ int tile_fill(struct TileQueue *tiles)
   return 0;
 }
 
+void init(struct TileQueue* tiles, int rank, int q, int N, int C)
+{
+  FILE* fd = fopen("config","r");
+  if (fd == NULL) {
+    fprintf(stderr, "No config file\n");
+    exit(EXIT_FAILURE);
+  }
+  int i;
+  char buffer[1024];
+  int method = 0, nb_task = 0, sleep_time = 100;
+  rank--;
+  for (i = 0; i < rank; i++)
+    fgets(buffer, 1024, fd);
+
+  fscanf(fd, "%d %d %d", &method, &nb_task, &sleep_time);
+
+  int k;
+  i = 0;
+  for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
+    // pushing tile in queue of current process
+    if (method == 0)
+      addTile(tiles,chinese_remainder_value(k, N, C));
+    else if (method == 1) {
+      addTile(tiles,chinese_remainder_value(k, N, C));
+      if (i % 3 == 2)
+        addTile(tiles, -sleep_time);
+      i++;
+    }
+  }
+  fclose(fd);
+}
+
 void
 img (const char *FileNameImg)
 {
   FILE   *FileImg;   
   COLOR  *TabColor, *Color, *TileColor;
   STRING Name;
-  INDEX  i, j, k,  rank, P;
+  INDEX  i, j, rank, P;
   BYTE   Byte;
   int N = 18988, err, provided;
   int next_proc;
@@ -261,14 +298,10 @@ img (const char *FileNameImg)
   INIT_MEM (TileColor, TILE_SIZE * TILE_SIZE, COLOR);
 
 
-
   if (rank != 0) {
     struct TileQueue tiles = {NULL, NULL};
-
-    for (k = (rank-1) * q; k <= chinese_remainder_bound((rank-1), q, C); k++){
-    // pushing tile in queue of current process
-      addTile(&tiles,chinese_remainder_value(k, N, C));
-    }
+    
+    init(&tiles,rank,q,N,C);
 
     pthread_mutex_init(&mutex,NULL);
     sem_init(&wait_work, 0, 0);
@@ -290,7 +323,7 @@ img (const char *FileNameImg)
           case TERMINATE:
           MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
           terminated = 1;
-            break;
+          break;
           case WORK_ASK:
           pthread_mutex_lock(&mutex);
           if(!isEmpty(&tiles)){
@@ -335,8 +368,6 @@ img (const char *FileNameImg)
     sem_destroy(&wait_work);
     sem_destroy(&ask_work);
   }
-
-
 
   if (rank == 0){ // process 0 gathers all the tiles
     // final image buffer
