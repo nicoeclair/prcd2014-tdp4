@@ -32,13 +32,15 @@
 
 #define TILE_SIZE 8
 #define NB_THREADS 4
-pthread_mutex_t mutex;
-MPI_Datatype MPI_COLOR;
-int Ci;
-int Cj;
-int terminated = 0;
+ pthread_mutex_t mutex;
+ MPI_Datatype MPI_COLOR;
+ int Ci;
+ int Cj;
+ int terminated = 0;
+ int looking_for_work = 0;
+ int work_asked = 0;
 
-enum {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
+ enum tag_e {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
 
  int min(int a, int b){
   return (a<b)?a:b;
@@ -188,25 +190,31 @@ int tile_fill(struct TileQueue *tiles)
   COLOR *TileColor;
   INIT_MEM(TileColor, TILE_SIZE * TILE_SIZE, COLOR);
   
-  pthread_mutex_lock(&mutex);
-  while(!isEmpty(tiles)){
-    int current_tile = firstElement(tiles);
-    pop(tiles);
-    pthread_mutex_unlock(&mutex);
-      // assigning first and final index of tile
-    int j_begin = rank_j(current_tile, Cj);
-    int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
-    int i_begin = rank_i(current_tile, Ci);
-    int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
-    for (j = j_begin; j < j_end ; j++) {
-      for (i = i_begin ; i < i_end; i++) {
-        TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
-      }
-    }
-    MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD); 
+  while(!terminated){
     pthread_mutex_lock(&mutex);
+    if (!isEmpty(tiles)) {
+      int current_tile = firstElement(tiles);
+      pop(tiles);
+      pthread_mutex_unlock(&mutex);
+
+      // assigning first and final index of tile
+      int j_begin = rank_j(current_tile, Cj);
+      int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
+      int i_begin = rank_i(current_tile, Ci);
+      int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
+      for (j = j_begin; j < j_end ; j++) {
+        for (i = i_begin ; i < i_end; i++) {
+          TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
+        }
+      }
+      MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD);
+      pthread_mutex_lock(&mutex);
+    } else {
+      looking_for_work = 1;
+    }
+    pthread_mutex_unlock(&mutex);
   }
-  pthread_mutex_unlock(&mutex);
+
   return 0;
 }
 
@@ -219,22 +227,22 @@ img (const char *FileNameImg)
   INDEX  i, j, k,  rank, P;
   BYTE   Byte;
   int N = 18988, err, provided;
-  int next_proc, prev_proc;
-  char buffer[1024];
-  MPI_Request rr, rs;
+  int next_proc;
+  MPI_Request rs;
 
   MPI_Status status;
   MPI_Init_thread(NULL, NULL, MPI_THREAD_MULTIPLE, &provided);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &P);
   next_proc = (rank + 1) % P;
-  prev_proc = (rank - 1 + P) % P;
+  if (next_proc == 0) next_proc++;
+  P--;
   
-  sprintf(buffer, "from %d to %d", rank, next_proc);
-  MPI_Isend(buffer, 1024, MPI_CHAR, next_proc, 32, MPI_COMM_WORLD, &rs);
-  MPI_Irecv(buffer, 1024, MPI_CHAR, prev_proc, 32, MPI_COMM_WORLD, &rr);
-  MPI_Wait(&rr, &status);
-  printf("I am %d => %s\n", rank, buffer);
+  // sprintf(buffer, "from %d to %d", rank, next_proc);
+  // MPI_Isend(buffer, 1024, MPI_CHAR, next_proc, 32, MPI_COMM_WORLD, &rs);
+  // MPI_Irecv(buffer, 1024, MPI_CHAR, prev_proc, 32, MPI_COMM_WORLD, &rr);
+  // MPI_Wait(&rr, &status);
+  // printf("I am %d => %s\n", rank, buffer);
 
   MPI_Type_vector(1, 3, 0, MPI_FLOAT, &MPI_COLOR);
   MPI_Type_commit(&MPI_COLOR);
@@ -253,58 +261,86 @@ img (const char *FileNameImg)
   int q = (C+P-1)/P;
   int size = Img.Pixel.i * Img.Pixel.j ;
   N = C/2+1;
-  if (rank == 0) {
-    // final image buffer
-    INIT_MEM (TabColor, size, COLOR);
-  }
+
   // buffer for each tile
   INIT_MEM (TileColor, TILE_SIZE * TILE_SIZE, COLOR);
-  struct TileQueue tiles = {NULL, NULL};
+  if (rank != 0) {
+    struct TileQueue tiles = {NULL, NULL};
 
-  for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
+    for (k = (rank-1) * q; k <= chinese_remainder_bound((rank-1), q, C); k++){
     // pushing tile in queue of current process
-    addTile(&tiles,chinese_remainder_value(k, N, C));
-  }
-
-  pthread_mutex_init(&mutex,NULL);
-  pthread_t tid[NB_THREADS];
-  for (i = 0; i < NB_THREADS; i++){
-    err = pthread_create(&(tid[i]), NULL, (void*)tile_fill, (void*)&tiles);
-    if (err != 0)
-      printf("\ncan't create thread :[%s]", strerror(err));
-  }
-  while (!terminated)
-  {
-    int flag = 0, msg;
-    while (!flag)
-      MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
-    MPI_Recv(&msg, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
-    switch (status.MPI_TAG){
-      case TERMINATE: terminated = 1; break;
-      case WORK_ASK: 
-      pthread_mutex_lock(&mutex);
-      if(!isEmpty(tiles)){
-        int tile = firstElement(tiles);
-        pop(tiles);
-        pthread_mutex_unlock(&mutex);
-        MPI_Isend(&tile, 1, MPI_INT, status.MPI_SOURCE, WORK_SEND, MPI_COMM_WORLD, &rs);
-      }
-      else {
-        pthread_mutex_unlock(&mutex);
-        MPI_Isend(&msg, 1, MPI_INT, next_proc, WORK_ASK, MPI_COMM_WORLD, &rs);
-      }
-      case WORK_SEND: 
-      // push
-      default: fprintf(stderr, "Err: Unknown message: %d\n", msg); break;
+      addTile(&tiles,chinese_remainder_value(k, N, C));
     }
-  }
-  for (i = 0; i < NB_THREADS; i++){
-    pthread_join(tid[i],NULL);
-  }
+
+    pthread_mutex_init(&mutex,NULL);
+    pthread_t tid[NB_THREADS];
+    for (i = 0; i < NB_THREADS; i++){
+      err = pthread_create(&(tid[i]), NULL, (void*)tile_fill, (void*)&tiles);
+      if (err != 0)
+        printf("\ncan't create thread :[%s]", strerror(err));
+    }
+    while (!terminated)
+    {
+      int flag = 0, msg;
+      MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+      if (flag) {
+        // printf("Source %d\t Tag %d\n", status.MPI_SOURCE, status.MPI_TAG);
+        MPI_Recv(&msg, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+        // printf("Goodbye\n");
+        if (rank == 3) printf("rank 3 received %d\n", status.MPI_TAG);
+        switch (status.MPI_TAG){
+          case TERMINATE:
+          // printf("TEST %d: %d\n",rank , terminated);
+          MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
+          terminated = 1;
+            break;
+          case WORK_ASK:
+          pthread_mutex_lock(&mutex);
+          if(!isEmpty(&tiles)){
+            int tile = firstElement(&tiles);
+            pop(&tiles);
+            pthread_mutex_unlock(&mutex);
+            MPI_Isend(&tile, 1, MPI_INT, status.MPI_SOURCE, WORK_SEND, MPI_COMM_WORLD, &rs);
+          }
+          else {
+            pthread_mutex_unlock(&mutex);
+            if (msg == rank){
+              MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
+              terminated = 1;
+            } else { 
+              MPI_Isend(&msg, 1, MPI_INT, next_proc, WORK_ASK, MPI_COMM_WORLD, &rs);
+            }
+          }
+          break;
+          case WORK_SEND: 
+          pthread_mutex_lock(&mutex);
+          addTile(&tiles, msg);
+          pthread_mutex_unlock(&mutex);
+          work_asked = 0;
+          looking_for_work = 0;
+          break;
+          default: 
+          fprintf(stderr, "Err: Unknown message: %d, with tag %d\n", msg,status.MPI_TAG); 
+          break;
+        }
+      }
+      if (looking_for_work && !work_asked){
+        MPI_Isend(&rank, 1, MPI_INT, next_proc, WORK_ASK, MPI_COMM_WORLD, &rs);
+        work_asked = 1;
+      }
+
+    }
+    for (i = 0; i < NB_THREADS; i++){
+      pthread_join(tid[i],NULL);
+    }
 
   // tile_fill(&tiles);
-  pthread_mutex_destroy(&mutex);
-  if (rank == 0){ // process 0 gets to know which tiles each process takes care of
+    pthread_mutex_destroy(&mutex);
+  }
+  if (rank == 0){ // process 0 gathers all the tiles
+    // final image buffer
+    INIT_MEM (TabColor, size, COLOR);
+
     for (j = 0; j < TILE_SIZE; j++) {
       memcpy(&TabColor[j * Img.Pixel.i ],&TileColor[j * TILE_SIZE],TILE_SIZE * sizeof(COLOR));
     }
@@ -330,10 +366,11 @@ img (const char *FileNameImg)
     EXIT_FILE (FileImg);
     printf("Copied in file\n");
     EXIT_MEM (TabColor);
-    printf("Freed tabcolor\n");
+    printf("Freed TabColor\n");
   }
   EXIT_MEM (TileColor);
+  printf("Freed TileColor\n");
+  printf("%d finished\n", rank);
   MPI_Finalize();
-  
 }
 
