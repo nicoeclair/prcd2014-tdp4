@@ -28,11 +28,12 @@
 #include "cmr.h"
 #include "mpi.h"
 #include <pthread.h>
-
+#include <semaphore.h>
 
 #define TILE_SIZE 8
 #define NB_THREADS 4
  pthread_mutex_t mutex;
+ sem_t wait_work, ask_work;
  MPI_Datatype MPI_COLOR;
  int Ci;
  int Cj;
@@ -189,7 +190,7 @@ int tile_fill(struct TileQueue *tiles)
   INDEX i,j;
   COLOR *TileColor;
   INIT_MEM(TileColor, TILE_SIZE * TILE_SIZE, COLOR);
-  
+
   while(!terminated){
     pthread_mutex_lock(&mutex);
     if (!isEmpty(tiles)) {
@@ -208,11 +209,11 @@ int tile_fill(struct TileQueue *tiles)
         }
       }
       MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD);
-      pthread_mutex_lock(&mutex);
     } else {
-      looking_for_work = 1;
+      pthread_mutex_unlock(&mutex);
+      sem_post(&ask_work);
+      sem_wait(&wait_work);
     }
-    pthread_mutex_unlock(&mutex);
   }
 
   return 0;
@@ -238,12 +239,6 @@ img (const char *FileNameImg)
   if (next_proc == 0) next_proc++;
   P--;
   
-  // sprintf(buffer, "from %d to %d", rank, next_proc);
-  // MPI_Isend(buffer, 1024, MPI_CHAR, next_proc, 32, MPI_COMM_WORLD, &rs);
-  // MPI_Irecv(buffer, 1024, MPI_CHAR, prev_proc, 32, MPI_COMM_WORLD, &rr);
-  // MPI_Wait(&rr, &status);
-  // printf("I am %d => %s\n", rank, buffer);
-
   MPI_Type_vector(1, 3, 0, MPI_FLOAT, &MPI_COLOR);
   MPI_Type_commit(&MPI_COLOR);
 
@@ -264,6 +259,9 @@ img (const char *FileNameImg)
 
   // buffer for each tile
   INIT_MEM (TileColor, TILE_SIZE * TILE_SIZE, COLOR);
+
+
+
   if (rank != 0) {
     struct TileQueue tiles = {NULL, NULL};
 
@@ -273,6 +271,9 @@ img (const char *FileNameImg)
     }
 
     pthread_mutex_init(&mutex,NULL);
+    sem_init(&wait_work, 0, 0);
+    sem_init(&ask_work, 0, 0);
+
     pthread_t tid[NB_THREADS];
     for (i = 0; i < NB_THREADS; i++){
       err = pthread_create(&(tid[i]), NULL, (void*)tile_fill, (void*)&tiles);
@@ -284,13 +285,9 @@ img (const char *FileNameImg)
       int flag = 0, msg;
       MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
       if (flag) {
-        // printf("Source %d\t Tag %d\n", status.MPI_SOURCE, status.MPI_TAG);
         MPI_Recv(&msg, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
-        // printf("Goodbye\n");
-        if (rank == 3) printf("rank 3 received %d\n", status.MPI_TAG);
         switch (status.MPI_TAG){
           case TERMINATE:
-          // printf("TEST %d: %d\n",rank , terminated);
           MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
           terminated = 1;
             break;
@@ -316,27 +313,31 @@ img (const char *FileNameImg)
           pthread_mutex_lock(&mutex);
           addTile(&tiles, msg);
           pthread_mutex_unlock(&mutex);
-          work_asked = 0;
-          looking_for_work = 0;
+          sem_post(&wait_work);
           break;
           default: 
           fprintf(stderr, "Err: Unknown message: %d, with tag %d\n", msg,status.MPI_TAG); 
           break;
         }
       }
-      if (looking_for_work && !work_asked){
+      if (sem_trywait(&ask_work) == 0){
         MPI_Isend(&rank, 1, MPI_INT, next_proc, WORK_ASK, MPI_COMM_WORLD, &rs);
-        work_asked = 1;
       }
-
+    }
+    for (i = 0; i < NB_THREADS; i++){
+      sem_post(&wait_work);
     }
     for (i = 0; i < NB_THREADS; i++){
       pthread_join(tid[i],NULL);
     }
 
-  // tile_fill(&tiles);
     pthread_mutex_destroy(&mutex);
+    sem_destroy(&wait_work);
+    sem_destroy(&ask_work);
   }
+
+
+
   if (rank == 0){ // process 0 gathers all the tiles
     // final image buffer
     INIT_MEM (TabColor, size, COLOR);
@@ -366,11 +367,8 @@ img (const char *FileNameImg)
     EXIT_FILE (FileImg);
     printf("Copied in file\n");
     EXIT_MEM (TabColor);
-    printf("Freed TabColor\n");
   }
   EXIT_MEM (TileColor);
-  printf("Freed TileColor\n");
-  printf("%d finished\n", rank);
   MPI_Finalize();
 }
 
