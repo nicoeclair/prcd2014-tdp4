@@ -187,10 +187,13 @@ int tile_fill(struct TileQueue *tiles)
 			int current_tile = firstElement(tiles);
 			pop(tiles);
 			pthread_mutex_unlock(&mutex);
+
+			// fake tasks
 			if (current_tile < 0) {
 				printf("sleeping %d us\n", -current_tile);
 				usleep(-current_tile);
 			}
+			// regular tasks
 			else {
       	// assigning first and final index of tile
 				int j_begin = rank_j(current_tile, Cj);
@@ -220,6 +223,7 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 	FILE* fd = fopen("config","r");
 	int i, k;
 	rank--;
+	// no config file: regular tasks
 	if (fd == NULL) {
 		fprintf(stderr, "Warning: No config file\n");
 		for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
@@ -230,6 +234,8 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 	char buffer[1024];
 	int nb_task = 0, sleep_time = 100;
 	fgets(buffer, 8, fd);
+
+	// Chosen method == 0: regular tasks
 	if (atoi(buffer) == 0){
 		for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
 			addTile(tiles,chinese_remainder_value(k, N, C));
@@ -238,9 +244,9 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 		return;
 	}
 
+	// Chosen method == 1: Go to rank-th line, read number of tasks & sleep time for current processus
 	for (i = 0; i < rank; i++)
 		fgets(buffer, 1024, fd);
-
 	fscanf(fd, "%d %d", &nb_task,	&sleep_time);
 
 	for (k = rank*q; k <= min((rank+1)*q - 1, C - 1); k++){
@@ -294,36 +300,41 @@ img (const char *FileNameImg)
   if (rank != 0) {
   	struct TileQueue tiles = {NULL, NULL};
 
+  	// Init tasks
   	init(&tiles,rank,q,N,C);
 
+  	// Init mutex, semaphores & threads
   	pthread_mutex_init(&mutex,NULL);
   	sem_init(&wait_work, 0, 0);
   	sem_init(&ask_work, 0, 0);
-
   	pthread_t tid[NB_THREADS];
   	for (i = 0; i < NB_THREADS; i++){
   		err = pthread_create(&(tid[i]), NULL, (void*)tile_fill, (void*)&tiles);
   		if (err != 0)
   			printf("\ncan't create thread :[%s]", strerror(err));
   	}
+
+  	// Main thread: Communicator
   	while (!terminated)
   	{
   		int flag = 0, msg;
   		MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
   		if (flag) {
+  			// We DID receive a communication so we CAN do a blocking receive
   			MPI_Recv(&msg, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+  			// TAG contains the information about what the message is
   			switch (status.MPI_TAG){
-  				case TERMINATE:
+  				case TERMINATE: // No more jobs; threads can finish their jobs and return
   				MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
   				terminated = 1;
   				break;
-  				case WORK_ASK:
+  				case WORK_ASK: // msg-th process is seeking for job
   				pthread_mutex_lock(&mutex);
   				if(!isEmpty(&tiles)){
   					int tile = firstElement(&tiles);
   					pop(&tiles);
   					pthread_mutex_unlock(&mutex);
-  					MPI_Isend(&tile, 1, MPI_INT, status.MPI_SOURCE, WORK_SEND, MPI_COMM_WORLD, &rs);
+  					MPI_Isend(&tile, 1, MPI_INT, msg, WORK_SEND, MPI_COMM_WORLD, &rs);
   				}
   				else {
   					pthread_mutex_unlock(&mutex);
@@ -335,7 +346,7 @@ img (const char *FileNameImg)
   					}
   				}
   				break;
-  				case WORK_SEND: 
+  				case WORK_SEND: // Received a job
   				pthread_mutex_lock(&mutex);
   				addTile(&tiles, msg);
   				pthread_mutex_unlock(&mutex);
@@ -362,7 +373,10 @@ img (const char *FileNameImg)
   	sem_destroy(&ask_work);
   }
 
-  if (rank == 0){ // process 0 gathers all the tiles
+  // process 0 gathers all the tiles
+  if (rank == 0){ 
+
+  	// If fake tasks: we don't receive anything and don't write the image
   	FILE* fd = fopen("config","r");
   	if (fd != NULL){
   		char buffer[8];
@@ -374,7 +388,8 @@ img (const char *FileNameImg)
   			return;
   		}
   	}
-    // final image buffer
+
+    // final image buffer that will receive the tiles
   	INIT_MEM (TabColor, size, COLOR);
 
   	// Receive tiles from other procs
@@ -387,6 +402,7 @@ img (const char *FileNameImg)
   			memcpy(&TabColor[index_begin + j * Img.Pixel.i],&TileColor[j * TILE_SIZE],min(Img.Pixel.i - rank_i(current_tile,Ci),TILE_SIZE) * sizeof(COLOR));
   		}
   	}
+
     // writing in file
   	for (j = 0, Color = TabColor; j < size; j++, Color++) {
   		Byte = Color->r < 1.0 ? 255.0*Color->r : 255.0;
