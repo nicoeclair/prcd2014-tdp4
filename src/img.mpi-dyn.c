@@ -29,6 +29,8 @@ int Cj;
 int terminated = 0;
 int looking_for_work = 0;
 int work_asked = 0;
+pthread_mutex_t mutex_time;
+double local_time = 0;
 
 enum tag_e {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
 
@@ -142,7 +144,7 @@ printQueue(struct TileQueue *q)
 
 	while (e != NULL)
 	{
-		printf("%d - ", e->tile);
+		//printf("%d - ", e->tile);
 		e = e->next;
 	}
 	puts("");
@@ -180,6 +182,7 @@ int tile_fill(struct TileQueue *tiles)
 	INDEX i,j;
 	COLOR *TileColor;
 	INIT_MEM(TileColor, TILE_SIZE * TILE_SIZE, COLOR);
+	double time = MPI_Wtime();
 
 	while(!terminated){
 		pthread_mutex_lock(&mutex);
@@ -190,7 +193,7 @@ int tile_fill(struct TileQueue *tiles)
 
 			// fake tasks
 			if (current_tile < 0) {
-				printf("sleeping %d us\n", -current_tile);
+				//printf("sleeping %d us\n", -current_tile);
 				usleep(-current_tile);
 			}
 			// regular tasks
@@ -213,7 +216,11 @@ int tile_fill(struct TileQueue *tiles)
 			sem_wait(&wait_work);
 		}
 	}
-
+	
+	pthread_mutex_lock(&mutex_time);
+	local_time += MPI_Wtime() - time;
+	pthread_mutex_unlock(&mutex_time);
+	
 	return 0;
 }
 
@@ -233,7 +240,7 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 	}
 	char buffer[1024];
 	int nb_task = 0, sleep_time = 100;
-	fgets(buffer, 8, fd);
+	fgets(buffer, 1024, fd);
 
 	// Chosen method == 0: regular tasks
 	if (atoi(buffer) == 0){
@@ -258,7 +265,7 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 void
 img (const char *FileNameImg)
 {
-	FILE   *FileImg;   
+	FILE   *FileImg; 
 	COLOR  *TabColor, *Color, *TileColor;
 	STRING Name;
 	INDEX  i, j, rank, P;
@@ -305,6 +312,7 @@ img (const char *FileNameImg)
 
   	// Init mutex, semaphores & threads
   	pthread_mutex_init(&mutex,NULL);
+  	pthread_mutex_init(&mutex_time,NULL);
   	sem_init(&wait_work, 0, 0);
   	sem_init(&ask_work, 0, 0);
   	pthread_t tid[NB_THREADS];
@@ -369,8 +377,11 @@ img (const char *FileNameImg)
   	}
 
   	pthread_mutex_destroy(&mutex);
+  	pthread_mutex_destroy(&mutex_time);
   	sem_destroy(&wait_work);
   	sem_destroy(&ask_work);
+	
+	printf("processus %d worked %lf ms\n", rank, local_time);
   }
 
   // process 0 gathers all the tiles
