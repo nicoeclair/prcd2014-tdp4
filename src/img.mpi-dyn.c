@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 #define TILE_SIZE 8
 #define NB_THREADS 4
@@ -30,7 +31,7 @@ int terminated = 0;
 int looking_for_work = 0;
 int work_asked = 0;
 pthread_mutex_t mutex_time;
-double local_time = 0;
+long local_time = 0;
 
 enum tag_e {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
 
@@ -183,7 +184,9 @@ int tile_fill(struct TileQueue *tiles)
 	COLOR *TileColor;
 	INIT_MEM(TileColor, TILE_SIZE * TILE_SIZE, COLOR);
 	double time = MPI_Wtime();
-
+	struct timeval t1, t2;
+	gettimeofday(&t1, NULL);
+	
 	while(!terminated){
 		pthread_mutex_lock(&mutex);
 		if (!isEmpty(tiles)) {
@@ -218,7 +221,9 @@ int tile_fill(struct TileQueue *tiles)
 	}
 	
 	pthread_mutex_lock(&mutex_time);
-	local_time += MPI_Wtime() - time;
+	//local_time += MPI_Wtime() - time;
+	gettimeofday(&t2, NULL);
+	local_time += (t2.tv_sec - t1.tv_sec)*1000000 + t2.tv_usec - t1.tv_usec;//(t2.tv_usec > t1.tv_usec?0:1000000) + t2.tv_usec - t1.tv_usec;
 	pthread_mutex_unlock(&mutex_time);
 	
 	return 0;
@@ -256,6 +261,7 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 		fgets(buffer, 1024, fd);
 	fscanf(fd, "%d %d", &nb_task,	&sleep_time);
 
+	printf("creating %d tasks of %d time\n", nb_task, sleep_time);
 	for (k = rank*q; k <= min((rank+1)*q - 1, C - 1); k++){
 		addTile(tiles, -sleep_time);
 	}
@@ -375,15 +381,15 @@ img (const char *FileNameImg)
   	for (i = 0; i < NB_THREADS; i++){
   		pthread_join(tid[i],NULL);
   	}
-
+	
   	pthread_mutex_destroy(&mutex);
   	pthread_mutex_destroy(&mutex_time);
   	sem_destroy(&wait_work);
   	sem_destroy(&ask_work);
 	
-	printf("processus %d worked %lf ms\n", rank, local_time);
+	printf("processus %d worked %ld µs\n", rank, local_time/NB_THREADS);
   }
-
+  
   // process 0 gathers all the tiles
   if (rank == 0){ 
 
