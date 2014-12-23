@@ -32,6 +32,7 @@ MPICC = mpicc
 MPIEXEC = mpiexec
 np = 4
 FILE = ../scn/exemple/test
+stat = stats
 
 # options de compilation
 CPPFLAGS = -I../include -I. $(DEBUG) $(ZCAT)
@@ -122,6 +123,11 @@ lanceur: lanceur.o $(OBJ) $(SRC_IMAGE:.c=.o)
 
 exec: lanceur
 	$(MPIEXEC) -np $(np) lanceur $(FILE)
+
+plot: 
+	@gnuplot -e "name='$(stat)';output='$(stat).png" plot_sp.gp 
+	@eog $(stat).png 2>/dev/null &
+
 
 .c.o :
 	$(MPICC) $(CPPFLAGS) $(CFLAGS)  -c $<

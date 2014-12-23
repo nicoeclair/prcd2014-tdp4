@@ -245,7 +245,7 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
     return;
   }
   char buffer[1024];
-  int sleep_time = 100;
+  int nb_task = 0, sleep_time = 100;
   fgets(buffer, 1024, fd);
 
   // Chosen method == 0: regular tasks
@@ -260,10 +260,10 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
   // Chosen method == 1: Go to rank-th line, read number of tasks & sleep time for current processus
   for (i = 0; i < rank; i++)
     fgets(buffer, 1024, fd);
-  fscanf(fd, "%d %d", &C, &sleep_time);
-  q = (C+P-1)/P;
-  printf("creating %d tasks of %d µs\n", C, sleep_time);
-  for (k = rank*q; k <= min((rank+1)*q - 1, C - 1); k++){
+  fscanf(fd, "%d %d", &nb_task, &sleep_time);
+
+  printf("creating %d tasks of %d µs\n", nb_task, sleep_time);
+  for (k = 0; k < nb_task; k++){
     addTile(tiles, -sleep_time);
   }
   fclose(fd);
@@ -316,6 +316,10 @@ img (const char *FileNameImg)
 
     pthread_mutex_init(&mutex,NULL);
     pthread_t tid[NB_THREADS];
+    struct timeval t1, t2;
+    gettimeofday(&t1, NULL);
+
+
     for (i = 0; i < NB_THREADS; i++){
       err = pthread_create(&(tid[i]), NULL, (void*)tile_fill, (void*)&tiles);
       if (err != 0)
@@ -324,8 +328,9 @@ img (const char *FileNameImg)
     for (i = 0; i < NB_THREADS; i++){
       pthread_join(tid[i],NULL);
     }
-
-    fprintf(stderr,"%d %ld\n", rank, local_time/NB_THREADS);
+    gettimeofday(&t2, NULL);
+    local_time = (t2.tv_sec - t1.tv_sec)*1000000 + t2.tv_usec - t1.tv_usec;
+    fprintf(stderr,"%d %ld\n", rank, local_time);
   // tile_fill(&tiles);
     pthread_mutex_destroy(&mutex);
 

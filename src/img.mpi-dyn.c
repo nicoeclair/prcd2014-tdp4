@@ -25,6 +25,7 @@
 pthread_mutex_t mutex;
 sem_t wait_work, ask_work;
 MPI_Datatype MPI_COLOR;
+INDEX P;
 int Ci;
 int Cj;
 int terminated = 0;
@@ -262,9 +263,9 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 	fscanf(fd, "%d %d", &nb_task,	&sleep_time);
 
 	printf("creating %d tasks of %d µs\n", nb_task, sleep_time);
-	for (k = rank*q; k <= min((rank+1)*q - 1, nb_task - 1); k++){
-		addTile(tiles, -sleep_time);
-	}
+	  for (k = 0; k < nb_task; k++){
+    addTile(tiles, -sleep_time);
+  }
 	fclose(fd);
 }
 
@@ -274,7 +275,7 @@ img (const char *FileNameImg)
 	FILE   *FileImg; 
 	COLOR  *TabColor, *Color, *TileColor;
 	STRING Name;
-	INDEX  i, j, rank, P;
+	INDEX  i, j, rank;
 	BYTE   Byte;
 	int N = 18988, err, provided;
 	int next_proc;
