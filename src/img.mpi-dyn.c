@@ -261,7 +261,7 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 		fgets(buffer, 1024, fd);
 	fscanf(fd, "%d %d", &nb_task,	&sleep_time);
 
-	printf("creating %d tasks of %d time\n", nb_task, sleep_time);
+	printf("creating %d tasks of %d µs\n", nb_task, sleep_time);
 	for (k = rank*q; k <= min((rank+1)*q - 1, C - 1); k++){
 		addTile(tiles, -sleep_time);
 	}

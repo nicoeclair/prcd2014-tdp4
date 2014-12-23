@@ -28,16 +28,17 @@
 #include "cmr.h"
 #include "mpi.h"
 #include <pthread.h>
+#include <time.h>
 
 
 #define TILE_SIZE 8
 #define NB_THREADS 4
-pthread_mutex_t mutex;
-MPI_Datatype MPI_COLOR;
-int Ci;
-int Cj;
+ pthread_mutex_t mutex;
+ MPI_Datatype MPI_COLOR;
+ int Ci;
+ int Cj;
 
-enum {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
+ enum {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
 
  int min(int a, int b){
   return (a<b)?a:b;
@@ -192,21 +193,67 @@ int tile_fill(struct TileQueue *tiles)
     int current_tile = firstElement(tiles);
     pop(tiles);
     pthread_mutex_unlock(&mutex);
-      // assigning first and final index of tile
-    int j_begin = rank_j(current_tile, Cj);
-    int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
-    int i_begin = rank_i(current_tile, Ci);
-    int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
-    for (j = j_begin; j < j_end ; j++) {
-      for (i = i_begin ; i < i_end; i++) {
-        TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
-      }
+
+    // fake tasks
+    if (current_tile < 0) {
+      //printf("sleeping %d us\n", -current_tile);
+      usleep(-current_tile);
     }
-    MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD); 
+    else {
+      // assigning first and final index of tile
+      int j_begin = rank_j(current_tile, Cj);
+      int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
+      int i_begin = rank_i(current_tile, Ci);
+      int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
+      for (j = j_begin; j < j_end ; j++) {
+        for (i = i_begin ; i < i_end; i++) {
+          TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
+        }
+      }
+      MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD); 
+    }
     pthread_mutex_lock(&mutex);
   }
   pthread_mutex_unlock(&mutex);
   return 0;
+}
+
+// function to init tasks
+void init(struct TileQueue* tiles, int rank, int q, int N, int C)
+{
+  FILE* fd = fopen("config","r");
+  int i, k;
+  // no config file: regular tasks
+  if (fd == NULL) {
+    fprintf(stderr, "Warning: No config file\n");
+    for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
+      addTile(tiles,chinese_remainder_value(k, N, C));
+    }
+    return;
+  }
+  char buffer[1024];
+  int nb_task = 0, sleep_time = 100;
+  fgets(buffer, 1024, fd);
+
+  // Chosen method == 0: regular tasks
+  if (atoi(buffer) == 0){
+    for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
+      addTile(tiles,chinese_remainder_value(k, N, C));
+    }
+    fclose(fd);
+    return;
+  }
+
+  // Chosen method == 1: Go to rank-th line, read number of tasks & sleep time for current processus
+  for (i = 0; i < rank; i++)
+    fgets(buffer, 1024, fd);
+  fscanf(fd, "%d %d", &nb_task, &sleep_time);
+
+  printf("creating %d tasks of %d µs\n", nb_task, sleep_time);
+  for (k = rank*q; k <= min((rank+1)*q - 1, C - 1); k++){
+    addTile(tiles, -sleep_time);
+  }
+  fclose(fd);
 }
 
 void
@@ -215,7 +262,7 @@ img (const char *FileNameImg)
   FILE   *FileImg;   
   COLOR  *TabColor, *Color, *TileColor;
   STRING Name;
-  INDEX  i, j, k,  rank, P;
+  INDEX  i, j, rank, P;
   BYTE   Byte;
   int N = 18988, err, provided;
 
@@ -249,10 +296,8 @@ img (const char *FileNameImg)
   INIT_MEM (TileColor, TILE_SIZE * TILE_SIZE, COLOR);
   struct TileQueue tiles = {NULL, NULL};
 
-  for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
-    // pushing tile in queue of current process
-    addTile(&tiles,chinese_remainder_value(k, N, C));
-  }
+  // Init tasks
+  init(&tiles,rank,q,N,C);
 
   pthread_mutex_init(&mutex,NULL);
   pthread_t tid[NB_THREADS];

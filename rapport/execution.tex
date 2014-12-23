@@ -7,8 +7,7 @@ De même, le code a été segmenté pour permettre une lecture plus aisée de l'
 \section{Performances} % (fold)
 \label{sec:perf}
 
-Une série de tests est lancée sur différentes tailles de matrice plusieurs fois, afin d'obtenir des temps d'exécution moyens.
-Les courbes de performances ont été tracées avec gnuplot et permettent de savoir où le programme passe le plus de temps (Fig. \ref{fig:diff}). On peut voir que pour des dimensions de matrice de plus en plus grandes, c'est surtout le calcul de la multiplication qui augmente. En effet, nous ne faisons pas varier le nombre de processus, tous les tests sont effectués avec quatre processus. On observe une augmentation linéaire du temps de calcul une fois que les processus ont suffisamment de calcul à effectuer.
+Les courbes de performances ont été tracées avec gnuplot (Fig. \ref{fig:diff}).
 
 %\begin{figure}[H]
 %\centering
@@ -17,7 +16,6 @@ Les courbes de performances ont été tracées avec gnuplot et permettent de sav
 %\label{fig:diff}
 %\end{figure}
 
-Si l'on compare la figure précédente à la figure \ref{fig:sp}, la parallélisation s'améliore avec la taille du problème pour atteindre un pic juste en dessous de 4. Nous avons fait les comparaisons avec MKL sans parallélisation. Il faut cependant tenir compte du fait que MKL est déjà très optimisé, et nos communications ralentissent légèrement le programme rendant difficile d'atteindre un speed up de 4. On remarque également deux baisses de speed up sur la courbe. Ces baisses sont certainement dues à la taille des caches, et dans le deuxième cas pour les matrices de taille 4096*4096, à des accès à la mémoire RAM.
 
 %\begin{figure}[H]
 %\centering
