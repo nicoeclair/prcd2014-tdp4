@@ -28,15 +28,19 @@
 #include "cmr.h"
 #include "mpi.h"
 #include <pthread.h>
-#include <time.h>
+#include <sys/time.h>
+ #include "unistd.h"
 
 
 #define TILE_SIZE 8
 #define NB_THREADS 4
  pthread_mutex_t mutex;
  MPI_Datatype MPI_COLOR;
+ INDEX P;
  int Ci;
  int Cj;
+ pthread_mutex_t mutex_time;
+ long local_time = 0;
 
  enum {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
 
@@ -187,6 +191,8 @@ int tile_fill(struct TileQueue *tiles)
   INDEX i,j;
   COLOR *TileColor;
   INIT_MEM(TileColor, TILE_SIZE * TILE_SIZE, COLOR);
+  struct timeval t1, t2;
+  gettimeofday(&t1, NULL);
   
   pthread_mutex_lock(&mutex);
   while(!isEmpty(tiles)){
@@ -215,6 +221,12 @@ int tile_fill(struct TileQueue *tiles)
     pthread_mutex_lock(&mutex);
   }
   pthread_mutex_unlock(&mutex);
+
+  pthread_mutex_lock(&mutex_time);
+  gettimeofday(&t2, NULL);
+  local_time += (t2.tv_sec - t1.tv_sec)*1000000 + t2.tv_usec - t1.tv_usec;
+  pthread_mutex_unlock(&mutex_time);
+
   return 0;
 }
 
@@ -223,6 +235,7 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 {
   FILE* fd = fopen("config","r");
   int i, k;
+  rank--;
   // no config file: regular tasks
   if (fd == NULL) {
     fprintf(stderr, "Warning: No config file\n");
@@ -232,7 +245,7 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
     return;
   }
   char buffer[1024];
-  int nb_task = 0, sleep_time = 100;
+  int sleep_time = 100;
   fgets(buffer, 1024, fd);
 
   // Chosen method == 0: regular tasks
@@ -247,9 +260,9 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
   // Chosen method == 1: Go to rank-th line, read number of tasks & sleep time for current processus
   for (i = 0; i < rank; i++)
     fgets(buffer, 1024, fd);
-  fscanf(fd, "%d %d", &nb_task, &sleep_time);
-
-  printf("creating %d tasks of %d µs\n", nb_task, sleep_time);
+  fscanf(fd, "%d %d", &C, &sleep_time);
+  q = (C+P-1)/P;
+  printf("creating %d tasks of %d µs\n", C, sleep_time);
   for (k = rank*q; k <= min((rank+1)*q - 1, C - 1); k++){
     addTile(tiles, -sleep_time);
   }
@@ -262,7 +275,7 @@ img (const char *FileNameImg)
   FILE   *FileImg;   
   COLOR  *TabColor, *Color, *TileColor;
   STRING Name;
-  INDEX  i, j, rank, P;
+  INDEX  i, j, rank;
   BYTE   Byte;
   int N = 18988, err, provided;
 
@@ -294,25 +307,44 @@ img (const char *FileNameImg)
   }
   // buffer for each tile
   INIT_MEM (TileColor, TILE_SIZE * TILE_SIZE, COLOR);
-  struct TileQueue tiles = {NULL, NULL};
+
+  if (rank != 0) {
+    struct TileQueue tiles = {NULL, NULL};
 
   // Init tasks
-  init(&tiles,rank,q,N,C);
+    init(&tiles,rank,q,N,C);
 
-  pthread_mutex_init(&mutex,NULL);
-  pthread_t tid[NB_THREADS];
-  for (i = 0; i < NB_THREADS; i++){
-    err = pthread_create(&(tid[i]), NULL, (void*)tile_fill, (void*)&tiles);
-    if (err != 0)
-      printf("\ncan't create thread :[%s]", strerror(err));
-  }
-  for (i = 0; i < NB_THREADS; i++){
-    pthread_join(tid[i],NULL);
-  }
+    pthread_mutex_init(&mutex,NULL);
+    pthread_t tid[NB_THREADS];
+    for (i = 0; i < NB_THREADS; i++){
+      err = pthread_create(&(tid[i]), NULL, (void*)tile_fill, (void*)&tiles);
+      if (err != 0)
+        printf("\ncan't create thread :[%s]", strerror(err));
+    }
+    for (i = 0; i < NB_THREADS; i++){
+      pthread_join(tid[i],NULL);
+    }
 
+    fprintf(stderr,"%d %ld\n", rank, local_time/NB_THREADS);
   // tile_fill(&tiles);
-  pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&mutex);
+
+  }
   if (rank == 0){ // process 0 gets to know which tiles each process takes care of
+
+    // If fake tasks: we don't receive anything and don't write the image
+    FILE* fd = fopen("config","r");
+    if (fd != NULL){
+      char buffer[8];
+      fgets(buffer,8,fd);
+      if (atoi(buffer) == 1){
+        EXIT_FILE(FileImg);
+        EXIT_MEM(TileColor);
+        MPI_Finalize();
+        return;
+      }
+    }
+
     for (j = 0; j < TILE_SIZE; j++) {
       memcpy(&TabColor[j * Img.Pixel.i ],&TileColor[j * TILE_SIZE],TILE_SIZE * sizeof(COLOR));
     }
@@ -342,6 +374,5 @@ img (const char *FileNameImg)
   }
   EXIT_MEM (TileColor);
   MPI_Finalize();
-  
 }
 
