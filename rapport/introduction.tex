@@ -1,5 +1,5 @@
 \section{Introduction} % (fold)
 \label{sec:introduction}
-Le but de ce projet est de paralléliser un programme de projection de rayons avec la bibliothèque MPI.  
+Le but de ce projet était de paralléliser un programme de projection de rayons avec la bibliothèque MPI, couplée avec des threads. Un système de vol de tâches devait être mis en place. Chaque processus comportait en effet un certain nombre de threads  travaillant sur les tâches tandis qu'un thread de communication s'occupait de discuter avec les autres processus afin de s'échanger des informations quant à la progression du travail, et répartir en conséquence les tâches restantes. 
 
 % section introduction (end)
