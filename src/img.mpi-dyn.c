@@ -38,9 +38,6 @@ int vol = 0;
 
 enum tag_e {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
 
-int min(int a, int b){
-	return (a<b)?a:b;
-}
 
 typedef struct {
 	COUPLE  Pixel;
@@ -171,7 +168,7 @@ int rank_j(int rank, int Cj)
 int
 chinese_remainder_bound(int rank, int q, int C)
 {
-	return min((rank+1)*q - 1, C - 1);
+	return MIN((rank+1)*q - 1, C - 1);
 }
 
 int
@@ -202,9 +199,9 @@ int tile_fill(struct TileQueue *tiles)
 			else { // regular tasks
 				// assigning first and final index of tile
 				int j_begin = rank_j(current_tile, Cj);
-				int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
+				int j_end = MIN(j_begin + TILE_SIZE, Img.Pixel.j);
 				int i_begin = rank_i(current_tile, Ci);
-				int i_end = min(i_begin + TILE_SIZE, Img.Pixel.i);
+				int i_end = MIN(i_begin + TILE_SIZE, Img.Pixel.i);
 				for (j = j_begin; j < j_end ; j++) {
 					for (i = i_begin ; i < i_end; i++) {
 						TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
@@ -227,7 +224,8 @@ int tile_fill(struct TileQueue *tiles)
 	
 	pthread_mutex_lock(&mutex_time);
 	gettimeofday(&t2, NULL);
-	local_time += (t2.tv_sec - t1.tv_sec)*1000000 + t2.tv_usec - t1.tv_usec;
+	local_time = MAX(local_time,(t2.tv_sec - t1.tv_sec)*1000000 + t2.tv_usec - t1.tv_usec);
+	printf("time %ld\n",(t2.tv_sec - t1.tv_sec)*1000000 + t2.tv_usec - t1.tv_usec);
 	pthread_mutex_unlock(&mutex_time);
 	return 0;
 }
@@ -269,12 +267,14 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
   k = 0;
   while (fgets(buffer,1024,fd) && k < C){
     sscanf(buffer, "%d %d", &nb_task, &sleep_time);
+    // printf("creating %d %d\n",nb_task,sleep_time );
     for (i = 0; i < nb_task && k < C; i++){
       sleep_values[k] = -sleep_time;
       k++;
     }
   }
 	for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
+		// printf("Adding %d to queue\n", sleep_values[(repartition == 0)?k:chinese_remainder_value(k, N, C)]);
 		addTile(tiles,sleep_values[(repartition == 0)?k:chinese_remainder_value(k, N, C)]);
 	}
 	free(sleep_values);
@@ -404,7 +404,7 @@ img (const char *FileNameImg)
 		pthread_mutex_destroy(&mutex_time);
 		sem_destroy(&wait_work);
 		sem_destroy(&ask_work);
-		fprintf(stderr, "%d %ld\n", rank, local_time/NB_THREADS);
+		fprintf(stderr, "%d %ld\n", rank, local_time);
 	}
 
 	// process 0 gathers all the tiles
@@ -433,7 +433,7 @@ img (const char *FileNameImg)
 			int j_begin = rank_j(current_tile,Cj);
 			int index_begin = rank_i(current_tile,Ci) + j_begin * Img.Pixel.i;
 			for (j = 0; j < TILE_SIZE && j_begin + j < Img.Pixel.j; j++) {
-				memcpy(&TabColor[index_begin + j * Img.Pixel.i],&TileColor[j * TILE_SIZE],min(Img.Pixel.i - rank_i(current_tile,Ci),TILE_SIZE) * sizeof(COLOR));
+				memcpy(&TabColor[index_begin + j * Img.Pixel.i],&TileColor[j * TILE_SIZE],MIN(Img.Pixel.i - rank_i(current_tile,Ci),TILE_SIZE) * sizeof(COLOR));
 			}
 		}
 

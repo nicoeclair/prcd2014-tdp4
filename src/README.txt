@@ -14,8 +14,9 @@ np et FILE optionnels.
 #########
 # Stats #
 #########
-./test.sh
-affiche les temps passés à calculer par les processus.
+./test.sh <nb>
+affiche les temps passés à calculer par les processus, de 3 à nb processus.
+<nb> non obligatoire, par défaut 5, est le nombre max de processus.
 
 #####################
 # Fichier de config #
