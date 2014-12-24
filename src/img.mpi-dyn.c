@@ -197,7 +197,6 @@ int tile_fill(struct TileQueue *tiles)
 			pthread_mutex_unlock(&mutex);
 
 			if (fake) { // fake tasks
-				// printf("sleeping %d us\n", -current_tile);
 				usleep(-current_tile);
 			}
 			else { // regular tasks
@@ -215,11 +214,12 @@ int tile_fill(struct TileQueue *tiles)
 				MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD);
 			}
 		} else {
+			pthread_mutex_unlock(&mutex);
 			if (!vol){
 				terminated = 1;
 				break;
 			}
-			pthread_mutex_unlock(&mutex);
+			// if vol de travail, ask for work and wait until we receive it
 			sem_post(&ask_work);
 			sem_wait(&wait_work);
 		}
@@ -232,13 +232,13 @@ int tile_fill(struct TileQueue *tiles)
 	return 0;
 }
 
-// function to init tasks
+// function to init tasks & read config file
 void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 {
 	FILE* fd = fopen("config","r");
 	int i, k;
 	rank--;
-	// no config file: regular tasks
+	// no config file: regular tasks, calculate image
 	if (fd == NULL) {
 		fprintf(stderr, "Warning: No config file. Regular tasks & chines remainder.\n");
 		for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
@@ -249,10 +249,9 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 	char buffer[1024];
 	int nb_task = 0, sleep_time = 100, repartition = 0;
 
-  // fake tasks ?
-	fscanf(fd, "%d\n", &fake);
-	fscanf(fd, "%d\n", &repartition);
-	fscanf(fd, "%d\n", &vol);
+	fscanf(fd, "%d\n", &fake); // fake tasks ?
+	fscanf(fd, "%d\n", &repartition); // chinese remainder ?
+	fscanf(fd, "%d\n", &vol); // vol de travail ?
 
 	if (fake == 0) {
   // Chosen method is: regular tasks
@@ -265,13 +264,11 @@ void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 
 	// Chosen method is: fake tasks
 	fscanf(fd, "%d\n", &C);
-  printf("total number of tasks %d\n", C);
   q = (C+P-1)/P;
   int *sleep_values = malloc(C * sizeof(int));
   k = 0;
   while (fgets(buffer,1024,fd) && k < C){
     sscanf(buffer, "%d %d", &nb_task, &sleep_time);
-    printf("creating %d tasks of %d µs\n", nb_task, sleep_time);
     for (i = 0; i < nb_task && k < C; i++){
       sleep_values[k] = -sleep_time;
       k++;

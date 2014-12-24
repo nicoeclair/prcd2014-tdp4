@@ -7,14 +7,13 @@ fi
 
 i=3
 while [ "$i" -le "$n" ]; do
-	echo -e "$i"
     sum_sp=0
     sum_sp1=0
 	sed -i '3s/.*/1/' config
-    echo "Vol de travail"
-	make exec np=${i}
+    echo -e "\nVol de travail"
+	make exec np=${i} 1>/dev/null
 	sed -i '3s/.*/0/' config
-    echo "Sans vol"
-	make exec np=${i}
+    echo -e "\nSans vol"
+	make exec np=${i} 1>/dev/null
 	i=$(($i+1))
 done
