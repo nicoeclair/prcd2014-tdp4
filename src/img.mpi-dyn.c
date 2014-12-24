@@ -33,6 +33,8 @@ int looking_for_work = 0;
 int work_asked = 0;
 pthread_mutex_t mutex_time;
 long local_time = 0;
+int fake = 0;
+int vol = 0;
 
 enum tag_e {WORK_ASK, WORK_SEND, TERMINATE, TILE_TAG_INDEX};
 
@@ -194,14 +196,10 @@ int tile_fill(struct TileQueue *tiles)
 			pop(tiles);
 			pthread_mutex_unlock(&mutex);
 
-			// fake tasks
-			if (current_tile < 0) {
-
-				// printf("sleeping %d us\n", -current_tile);
+			if (fake) { // fake tasks
 				usleep(-current_tile);
 			}
-			// regular tasks
-			else {
+			else { // regular tasks
 				// assigning first and final index of tile
 				int j_begin = rank_j(current_tile, Cj);
 				int j_end = min(j_begin + TILE_SIZE, Img.Pixel.j);
@@ -212,60 +210,74 @@ int tile_fill(struct TileQueue *tiles)
 						TileColor [(j-j_begin) * TILE_SIZE + (i-i_begin)] = pixel_basic (i, j);
 					}
 				}
+				// Sending current tile to proc 0
 				MPI_Send(TileColor, TILE_SIZE * TILE_SIZE, MPI_COLOR, 0, current_tile + TILE_TAG_INDEX, MPI_COMM_WORLD);
 			}
 		} else {
 			pthread_mutex_unlock(&mutex);
+			if (!vol){
+				terminated = 1;
+				break;
+			}
+			// if vol de travail, ask for work and wait until we receive it
 			sem_post(&ask_work);
 			sem_wait(&wait_work);
 		}
 	}
 	
 	pthread_mutex_lock(&mutex_time);
-	//local_time += MPI_Wtime() - time;
 	gettimeofday(&t2, NULL);
-	local_time += (t2.tv_sec - t1.tv_sec)*1000000 + t2.tv_usec - t1.tv_usec;//(t2.tv_usec > t1.tv_usec?0:1000000) + t2.tv_usec - t1.tv_usec;
+	local_time += (t2.tv_sec - t1.tv_sec)*1000000 + t2.tv_usec - t1.tv_usec;
 	pthread_mutex_unlock(&mutex_time);
-	
 	return 0;
 }
 
-// function to init tasks
+// function to init tasks & read config file
 void init(struct TileQueue* tiles, int rank, int q, int N, int C)
 {
 	FILE* fd = fopen("config","r");
 	int i, k;
 	rank--;
-	// no config file: regular tasks
+	// no config file: regular tasks, calculate image
 	if (fd == NULL) {
-		fprintf(stderr, "Warning: No config file\n");
+		fprintf(stderr, "Warning: No config file. Regular tasks & chines remainder.\n");
 		for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
 			addTile(tiles,chinese_remainder_value(k, N, C));
 		}
 		return;
 	}
 	char buffer[1024];
-	int nb_task = 0, sleep_time = 100;
-	fgets(buffer, 1024, fd);
+	int nb_task = 0, sleep_time = 100, repartition = 0;
 
-	// Chosen method == 0: regular tasks
-	if (atoi(buffer) == 0){
+	fscanf(fd, "%d\n", &fake); // fake tasks ?
+	fscanf(fd, "%d\n", &repartition); // chinese remainder ?
+	fscanf(fd, "%d\n", &vol); // vol de travail ?
+
+	if (fake == 0) {
+  // Chosen method is: regular tasks
 		for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
-			addTile(tiles,chinese_remainder_value(k, N, C));
+			addTile(tiles,(repartition==0)?k:chinese_remainder_value(k, N, C));
 		}
 		fclose(fd);
 		return;
 	}
 
-	// Chosen method == 1: Go to rank-th line, read number of tasks & sleep time for current processus
-	for (i = 0; i < rank; i++)
-		fgets(buffer, 1024, fd);
-	fscanf(fd, "%d %d", &nb_task,	&sleep_time);
-
-	printf("creating %d tasks of %d µs\n", nb_task, sleep_time);
-	  for (k = 0; k < nb_task; k++){
-    addTile(tiles, -sleep_time);
+	// Chosen method is: fake tasks
+	fscanf(fd, "%d\n", &C);
+  q = (C+P-1)/P;
+  int *sleep_values = malloc(C * sizeof(int));
+  k = 0;
+  while (fgets(buffer,1024,fd) && k < C){
+    sscanf(buffer, "%d %d", &nb_task, &sleep_time);
+    for (i = 0; i < nb_task && k < C; i++){
+      sleep_values[k] = -sleep_time;
+      k++;
+    }
   }
+	for (k = rank * q; k <= chinese_remainder_bound(rank, q, C); k++){
+		addTile(tiles,sleep_values[(repartition == 0)?k:chinese_remainder_value(k, N, C)]);
+	}
+	free(sleep_values);
 	fclose(fd);
 }
 
@@ -330,56 +342,60 @@ img (const char *FileNameImg)
 				printf("\ncan't create thread :[%s]", strerror(err));
 		}
 
+		// vol de travail ?
+		if (vol){
 		// Main thread: Communicator
-		while (!terminated)
-		{
-			int flag = 0, msg;
-			MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
-			if (flag) {
+			while (!terminated)
+			{
+				int flag = 0, msg;
+				MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+				if (flag) {
 				// We DID receive a communication so we CAN do a blocking receive
-				MPI_Recv(&msg, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
+					MPI_Recv(&msg, 1, MPI_INT, status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, &status);
 				// TAG contains the information about what the message is
-				switch (status.MPI_TAG){
-					case TERMINATE: // No more jobs; threads can finish their jobs and return
-					MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
-					terminated = 1;
-					break;
-					case WORK_ASK: // msg-th process is seeking for job
-					pthread_mutex_lock(&mutex);
-					if(!isEmpty(&tiles)){
-						int tile = firstElement(&tiles);
-						pop(&tiles);
-						pthread_mutex_unlock(&mutex);
-						MPI_Isend(&tile, 1, MPI_INT, msg, WORK_SEND, MPI_COMM_WORLD, &rs);
-					}
-					else {
-						pthread_mutex_unlock(&mutex);
-						if (msg == rank){
-							MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
-							terminated = 1;
-						} else { 
-							MPI_Isend(&msg, 1, MPI_INT, next_proc, WORK_ASK, MPI_COMM_WORLD, &rs);
+					switch (status.MPI_TAG){
+						case TERMINATE: // No more jobs; threads can finish their jobs and return
+						MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
+						terminated = 1;
+						break;
+						case WORK_ASK: // msg-th process is seeking for job
+						pthread_mutex_lock(&mutex);
+						if(!isEmpty(&tiles)){
+							int tile = firstElement(&tiles);
+							pop(&tiles);
+							pthread_mutex_unlock(&mutex);
+							MPI_Isend(&tile, 1, MPI_INT, msg, WORK_SEND, MPI_COMM_WORLD, &rs);
 						}
+						else {
+							pthread_mutex_unlock(&mutex);
+							if (msg == rank){
+								MPI_Isend(&msg, 1, MPI_INT, next_proc, TERMINATE, MPI_COMM_WORLD, &rs);
+								terminated = 1;
+							} else { 
+								MPI_Isend(&msg, 1, MPI_INT, next_proc, WORK_ASK, MPI_COMM_WORLD, &rs);
+							}
+						}
+						break;
+						case WORK_SEND: // Received a job
+						pthread_mutex_lock(&mutex);
+						addTile(&tiles, msg);
+						pthread_mutex_unlock(&mutex);
+						sem_post(&wait_work);
+						break;
+						default: 
+						fprintf(stderr, "Err: Unknown message: %d, with tag %d\n", msg,status.MPI_TAG); 
+						break;
 					}
-					break;
-					case WORK_SEND: // Received a job
-					pthread_mutex_lock(&mutex);
-					addTile(&tiles, msg);
-					pthread_mutex_unlock(&mutex);
-					sem_post(&wait_work);
-					break;
-					default: 
-					fprintf(stderr, "Err: Unknown message: %d, with tag %d\n", msg,status.MPI_TAG); 
-					break;
+				}
+				if (sem_trywait(&ask_work) == 0){
+					MPI_Isend(&rank, 1, MPI_INT, next_proc, WORK_ASK, MPI_COMM_WORLD, &rs);
 				}
 			}
-			if (sem_trywait(&ask_work) == 0){
-				MPI_Isend(&rank, 1, MPI_INT, next_proc, WORK_ASK, MPI_COMM_WORLD, &rs);
+			for (i = 0; i < NB_THREADS; i++){
+				sem_post(&wait_work);
 			}
 		}
-		for (i = 0; i < NB_THREADS; i++){
-			sem_post(&wait_work);
-		}
+
 		for (i = 0; i < NB_THREADS; i++){
 			pthread_join(tid[i],NULL);
 		}
@@ -390,16 +406,16 @@ img (const char *FileNameImg)
 		sem_destroy(&ask_work);
 		fprintf(stderr, "%d %ld\n", rank, local_time/NB_THREADS);
 	}
-	
+
 	// process 0 gathers all the tiles
 	if (rank == 0){ 
 
 		// If fake tasks: we don't receive anything and don't write the image
 		FILE* fd = fopen("config","r");
 		if (fd != NULL){
-			char buffer[8];
-			fgets(buffer,8,fd);
-			if (atoi(buffer) == 1){
+			int fake;
+			fscanf(fd,"%d\n",&fake);
+			if (fake){
 				EXIT_FILE(FileImg);
 				EXIT_MEM(TileColor);
 				MPI_Finalize();
