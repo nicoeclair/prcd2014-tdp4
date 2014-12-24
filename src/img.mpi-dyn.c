@@ -416,9 +416,9 @@ img (const char *FileNameImg)
 		// If fake tasks: we don't receive anything and don't write the image
 		FILE* fd = fopen("config","r");
 		if (fd != NULL){
-			char buffer[8];
-			fgets(buffer,8,fd);
-			if (atoi(buffer) == 1){
+			int fake;
+			fscanf(fd,"%d\n",&fake);
+			if (fake){
 				EXIT_FILE(FileImg);
 				EXIT_MEM(TileColor);
 				MPI_Finalize();

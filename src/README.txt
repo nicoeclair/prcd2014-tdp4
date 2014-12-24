@@ -14,6 +14,6 @@ np et FILE optionnels.
 #########
 # Stats #
 #########
-Pour afficher les temps passés par les processus
-make plot
+./test.sh
+affiche les temps passés à calculer par les processus.
 
