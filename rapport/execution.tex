@@ -9,9 +9,9 @@ De même, le code a été segmenté pour permettre une lecture plus aisée de l'
 
 Les courbes de performances ont été tracées avec gnuplot sur la version \og jouet \fg. Nous pouvions donc\\
 
-Dans un premier temps, nous avons comparé la distribution linéaire et la distribution des restes chinois, sans le vol de taches. Alors que la distribution linéaire n'est pas très efficace, la distribution des restes chinois permet de mieux répartir les taches couteuses entre les processus, ces taches couteuses étant contiguës dans le tableau d'attribution des tests (cela se retrouve dans le calcul des rayons, où les taches avec un temps de calcul élevé sont dans la même régions).
+Dans un premier temps, nous avons comparé la distribution linéaire et la distribution des restes chinois, sans le vol de taches. Alors que la distribution linéaire n'est pas très efficace, la distribution des restes chinois permet de mieux répartir les taches couteuses entre les processus, ces taches couteuses étant contiguës dans le tableau d'attribution des tests (cela se retrouve dans le calcul des rayons, où les taches avec un temps de calcul élevé sont dans la même régions).\\
 
-Dans un second temps, nous avons observé les performances de la distribution linéaire avec le vol de taches.
+Dans un second temps, nous avons observé les performances de la distribution linéaire avec le vol de taches. Les performances sont meilleures que sur les deux précédents cas, car une fois qu'un processus n'a plus de travail, il va chercher à en obtenir auprès des autres processus. Cela permet d'équilibrer la charge de calcul, malgré une mauvaise distribution.\\
 
 %\begin{figure}[H]
 %\centering
